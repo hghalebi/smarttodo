@@ -197,3 +197,4 @@ class OverallStats(BaseModel):
     overdue_tasks: int = Field(..., description="Number of overdue tasks")
     overall_completion_rate: float = Field(..., description="Overall completion rate percentage")
     task_list_stats: List[TaskListStats] = Field(..., description="Per-list statistics")
+

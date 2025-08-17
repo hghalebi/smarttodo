@@ -169,3 +169,4 @@ if __name__ == "__main__":
     
     print("\n✨ API testing completed!")
     print("📚 Visit http://localhost:8000/docs for interactive API documentation")
+

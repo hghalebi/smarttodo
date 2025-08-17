@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gmail MCP Enhanced Tester</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="text"], input[type="email"], textarea {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+        button {
+            background-color: #4285f4;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #results {
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            background: #f5f5f5;
+        }
+        .tab.active {
+            background: #4285f4;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .chip {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #e0e0e0;
+            border-radius: 12px;
+            margin: 2px;
+        }
+        .email-list {
+            margin-top: 20px;
+        }
+        .email-item {
+            padding: 10px;
+            border: 1px solid #ddd;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+        .email-header {
+            margin-bottom: 10px;
+        }
+        .results-count {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .advanced-filters {
+            margin-top: 20px;
+        }
+        .email-item.unread {
+            border-left: 4px solid #4285f4;
+        }
+        .email-snippet {
+            color: #666;
+            margin: 8px 0;
+            font-size: 0.9em;
+        }
+        .error-message {
+            color: #d32f2f;
+            padding: 10px;
+            background-color: #ffebee;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .no-emails {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .email-actions {
+            margin-top: 10px;
+        }
+        .results-count {
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #4285f4;
+        }
+    </style>
+</head>
+<body>
+    <h1>Gmail MCP Enhanced Tester</h1>
+
+    <div class="tabs">
+        <div class="tab active" onclick="showTab('send')">Send Email</div>
+        <div class="tab" onclick="showTab('search')">Search Emails</div>
+        <div class="tab" onclick="showTab('read')">Read Email</div>
+        <div class="tab" onclick="showTab('filter')">Filter Emails</div>
+        <div class="tab" onclick="showTab('unread')">Unread</div>
+    </div>
+
+    <div id="send" class="tab-content section active">
+        <h2>Send Email</h2>
+        <div class="form-group">
+            <label for="to">To (comma-separated):</label>
+            <input type="text" id="to" required>
+        </div>
+        <div class="form-group">
+            <label for="cc">CC (comma-separated):</label>
+            <input type="text" id="cc">
+        </div>
+        <div class="form-group">
+            <label for="bcc">BCC (comma-separated):</label>
+            <input type="text" id="bcc">
+        </div>
+        <div class="form-group">
+            <label for="subject">Subject:</label>
+            <input type="text" id="subject" required>
+        </div>
+        <div class="form-group">
+            <label for="body">Body:</label>
+            <textarea id="body" rows="5" required></textarea>
+        </div>
+        <button onclick="sendEmail()">Send Email</button>
+    </div>
+
+    <div id="search" class="tab-content section">
+        <h2>Search Emails</h2>
+        <div class="form-group">
+            <label for="query">Search Query:</label>
+            <input type="text" id="query" placeholder="Example: from:someone@example.com">
+        </div>
+        <div class="form-group">
+            <label for="maxResults">Max Results:</label>
+            <input type="number" id="maxResults" value="10" min="1" max="100">
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="includeContent"> Include email content
+            </label>
+        </div>
+        <button onclick="searchEmails()">Search</button>
+    </div>
+
+    <div id="read" class="tab-content section">
+        <h2>Read Email</h2>
+        <div class="form-group">
+            <label for="messageId">Message ID:</label>
+            <input type="text" id="messageId" required>
+        </div>
+        <button onclick="readEmail()">Read Email</button>
+    </div>
+
+    <div id="filter" class="tab-content section">
+        <h2>Filter Emails</h2>
+        <div class="form-group">
+            <label for="generalQuery">Search anywhere:</label>
+            <input type="text" id="generalQuery" placeholder="Enter any search term (e.g., 'food')">
+        </div>
+        <div class="form-group advanced-filters" style="border-top: 1px solid #ccc; margin-top: 20px; padding-top: 20px;">
+            <details>
+                <summary>Advanced Filters</summary>
+                <div class="form-group">
+                    <label for="filterFrom">From specific email:</label>
+                    <input type="email" id="filterFrom">
+                </div>
+                <div class="form-group">
+                    <label for="filterSubject">Subject contains:</label>
+                    <input type="text" id="filterSubject">
+                </div>
+                <div class="form-group">
+                    <label for="filterDateAfter">After date:</label>
+                    <input type="date" id="filterDateAfter">
+                </div>
+                <div class="form-group">
+                    <label for="filterDateBefore">Before date:</label>
+                    <input type="date" id="filterDateBefore">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="filterHasAttachment"> Has attachment
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>Read status:</label>
+                    <select id="filterReadStatus">
+                        <option value="">Any</option>
+                        <option value="true">Read</option>
+                        <option value="false">Unread</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="filterLabel">Label:</label>
+                    <input type="text" id="filterLabel">
+                </div>
+            </details>
+        </div>
+        <div class="form-group">
+            <label for="filterMaxResults">Max Results:</label>
+            <input type="number" id="filterMaxResults" value="10" min="1" max="100">
+        </div>
+        <button onclick="filterEmails()">Search</button>
+    </div>
+
+    <div id="unread" class="tab-content section">
+        <h2>Unread Emails</h2>
+        <div class="form-group">
+            <label for="unreadMaxResults">Max Results:</label>
+            <input type="number" id="unreadMaxResults" value="10" min="1" max="100">
+        </div>
+        <button onclick="getUnreadEmails()">Refresh Unread</button>
+        <div id="unreadEmailsList" class="email-list"></div>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            document.querySelector(`.tab:nth-child(${['send', 'search', 'read', 'filter', 'unread'].indexOf(tabId) + 1})`).classList.add('active');
+            
+            // Load unread emails automatically when switching to unread tab
+            if (tabId === 'unread') {
+                getUnreadEmails();
+            }
+        }
+
+        async function sendEmail() {
+            const data = {
+                to: document.getElementById('to').value.split(',').map(e => e.trim()),
+                subject: document.getElementById('subject').value,
+                body: document.getElementById('body').value,
+                cc: document.getElementById('cc').value ? document.getElementById('cc').value.split(',').map(e => e.trim()) : [],
+                bcc: document.getElementById('bcc').value ? document.getElementById('bcc').value.split(',').map(e => e.trim()) : []
+            };
+
+            try {
+                const response = await fetch('/send_email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                document.getElementById('results').textContent = `Email sent successfully!\nMessage ID: ${result.messageId}`;
+            } catch (error) {
+                document.getElementById('results').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function searchEmails() {
+            const data = {
+                query: document.getElementById('query').value,
+                maxResults: parseInt(document.getElementById('maxResults').value),
+                includeContent: document.getElementById('includeContent').checked
+            };
+
+            try {
+                const response = await fetch('/search_emails', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                document.getElementById('results').textContent = JSON.stringify(result, null, 2);
+            } catch (error) {
+                document.getElementById('results').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function readEmail() {
+            const data = {
+                messageId: document.getElementById('messageId').value
+            };
+
+            try {
+                const response = await fetch('/read_email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                document.getElementById('results').textContent = JSON.stringify(result, null, 2);
+            } catch (error) {
+                document.getElementById('results').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function filterEmails() {
+            const data = {
+                query: document.getElementById('generalQuery').value,
+                from: document.getElementById('filterFrom').value,
+                subject: document.getElementById('filterSubject').value,
+                date_after: document.getElementById('filterDateAfter').value,
+                date_before: document.getElementById('filterDateBefore').value,
+                has_attachment: document.getElementById('filterHasAttachment').checked,
+                label: document.getElementById('filterLabel').value,
+                max_results: parseInt(document.getElementById('filterMaxResults').value)
+            };
+
+            const readStatus = document.getElementById('filterReadStatus').value;
+            if (readStatus !== '') {
+                data.is_read = readStatus === 'true';
+            }
+
+            // Remove empty fields to keep the query clean
+            Object.keys(data).forEach(key => {
+                if (!data[key] && data[key] !== false) {
+                    delete data[key];
+                }
+            });
+
+            try {
+                const response = await fetch('/filter_emails', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                displayResults(result);
+            } catch (error) {
+                document.getElementById('results').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function getUnreadEmails() {
+            try {
+                const maxResults = document.getElementById('unreadMaxResults').value;
+                const response = await fetch(`/unread_emails?max_results=${maxResults}`);
+                const result = await response.json();
+                
+                const unreadList = document.getElementById('unreadEmailsList');
+                
+                if (result.error) {
+                    unreadList.innerHTML = `<div class="error-message">Error: ${result.error}</div>`;
+                    return;
+                }
+                
+                // Create the unread emails display
+                let html = `<div class="results-count">Unread emails: ${result.unread_count}</div>`;
+                
+                if (result.unread_count === 0) {
+                    html += '<div class="no-emails">No unread emails!</div>';
+                } else {
+                    result.messages.forEach(email => {
+                        html += `
+                            <div class="email-item unread">
+                                <div class="email-header">
+                                    <strong>From:</strong> ${email.from}<br>
+                                    <strong>Subject:</strong> ${email.subject}<br>
+                                    <strong>Date:</strong> ${email.date}
+                                </div>
+                                <div class="email-snippet">${email.snippet}</div>
+                                <div class="email-actions">
+                                    <button onclick="readEmail('${email.id}')">Read Email</button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                unreadList.innerHTML = html;
+                
+            } catch (error) {
+                document.getElementById('unreadEmailsList').innerHTML = 
+                    `<div class="error-message">Error: ${error.message}</div>`;
+            }
+        }
+
+        function displayResults(result) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = ''; // Clear previous results
+
+            const countDiv = document.createElement('div');
+            countDiv.className = 'results-count';
+            countDiv.textContent = `Found ${result.count} emails`;
+            resultsDiv.appendChild(countDiv);
+
+            const emailList = document.createElement('div');
+            emailList.className = 'email-list';
+            
+            result.messages.forEach(email => {
+                const emailDiv = document.createElement('div');
+                emailDiv.className = 'email-item';
+                emailDiv.innerHTML = `
+                    <div class="email-header">
+                        <strong>From:</strong> ${email.from}<br>
+                        <strong>Subject:</strong> ${email.subject}<br>
+                        <strong>Date:</strong> ${email.date}
+                    </div>
+                    <button onclick="readEmail('${email.id}')">Read Email</button>
+                `;
+                emailList.appendChild(emailDiv);
+            });
+            
+            resultsDiv.appendChild(emailList);
+        }
+    </script>
+</body>
+</html>

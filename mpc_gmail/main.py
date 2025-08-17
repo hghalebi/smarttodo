@@ -4,17 +4,26 @@ from fastapi import FastAPI, Body
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-import base64
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from datetime import datetime, timedelta
-import json
+from fastmcp import FastMCP
+from typing import List, Optional, Union
+import base64
+
+# Initialize FastMCP
+mcp = FastMCP("Gmail MCP 📧")
+
+# Create ASGI app from MCP server with specific path
+mcp_app = mcp.http_app(path='/mcp')
+
+# Create FastAPI app with MCP lifespan
+app = FastAPI(title="Gmail MCP API", lifespan=mcp_app.lifespan)
 
 # --- App and Configuration ---
-app = FastAPI()
-SCOPES = ['https://mail.google.com/'] # Only Gmail scope
+SCOPES = ['https://mail.google.com/']
 CREDENTIALS_FILE = 'credentials.json'
 TOKEN_PICKLE_FILE = 'token.pickle'
 
@@ -47,9 +56,138 @@ def get_gmail_service():
             
     return build('gmail', 'v1', credentials=creds)
 
-# --- MCP Tool Definition ---
+# --- MCP Tools Definition ---
+@mcp.tool
+def send_email(
+    to: Union[str, List[str]],
+    subject: str,
+    body: str,
+    cc: Optional[List[str]] = None,
+    bcc: Optional[List[str]] = None
+) -> dict:
+    """
+    Send an email to one or multiple recipients.
+    
+    Args:
+        to: Email address or list of email addresses
+        subject: Email subject
+        body: Email content
+        cc: Optional list of CC recipients
+        bcc: Optional list of BCC recipients
+    
+    Returns:
+        dict: Message ID and status
+    """
+    # Normalize the 'to' field to always be a list
+    if isinstance(to, str):
+        to = [to]
+    elif not isinstance(to, (list, tuple)):
+        raise ValueError("'to' must be a string or list of strings")
+
+    data = {
+        "to": to,
+        "subject": subject or "",
+        "body": body or "",
+        "cc": cc if isinstance(cc, (list, type(None))) else [cc],
+        "bcc": bcc if isinstance(bcc, (list, type(None))) else [bcc]
+    }
+    return send_email_endpoint(data)
+
+@mcp.tool
+def read_email(message_id: str) -> dict:
+    """
+    Read a specific email by its ID.
+    
+    Args:
+        message_id: The ID of the email to read
+    
+    Returns:
+        dict: Email content including subject, sender, date, and body
+    """
+    return read_email_endpoint({"messageId": message_id})
+
+@mcp.tool
+def search_emails(
+    query: str,
+    max_results: int = 10,
+    include_content: bool = False
+) -> dict:
+    """
+    Search emails using Gmail query syntax.
+    
+    Args:
+        query: Gmail search query
+        max_results: Maximum number of results to return
+        include_content: Whether to include email content in results
+    
+    Returns:
+        dict: List of matching emails
+    """
+    data = {
+        "query": query,
+        "maxResults": max_results,
+        "includeContent": include_content
+    }
+    return search_emails_endpoint(data)
+
+@mcp.tool
+def filter_emails(
+    query: Optional[str] = None,
+    from_email: Optional[str] = None,
+    subject: Optional[str] = None,
+    has_attachment: Optional[bool] = None,
+    date_after: Optional[str] = None,
+    date_before: Optional[str] = None,
+    is_read: Optional[bool] = None,
+    label: Optional[str] = None,
+    max_results: int = 10
+) -> dict:
+    """
+    Filter emails using multiple criteria.
+    
+    Args:
+        query: General search term
+        from_email: Sender's email address
+        subject: Subject text to search
+        has_attachment: Filter by attachment presence
+        date_after: Filter emails after date (YYYY-MM-DD)
+        date_before: Filter emails before date (YYYY-MM-DD)
+        is_read: Filter by read status
+        label: Filter by label
+        max_results: Maximum number of results
+    
+    Returns:
+        dict: Filtered email list with count
+    """
+    data = {
+        "query": query,
+        "from": from_email,
+        "subject": subject,
+        "has_attachment": has_attachment,
+        "date_after": date_after,
+        "date_before": date_before,
+        "is_read": is_read,
+        "label": label,
+        "max_results": max_results
+    }
+    return filter_emails_endpoint(data)
+
+@mcp.tool
+def get_unread_emails(max_results: int = 10) -> dict:
+    """
+    Get unread emails.
+    
+    Args:
+        max_results: Maximum number of unread emails to retrieve
+    
+    Returns:
+        dict: List of unread emails with count
+    """
+    return get_unread_emails_endpoint(max_results=max_results)
+
+# --- Original FastAPI endpoints (renamed to avoid conflicts) ---
 @app.post("/send_email")
-def send_email(data: dict = Body(...)):
+def send_email_endpoint(data: dict = Body(...)):
     """
     Enhanced MCP tool to send an email to multiple recipients.
     Expects a JSON body with:
@@ -63,18 +201,36 @@ def send_email(data: dict = Body(...)):
     
     # Create the email message
     message = MIMEMultipart()
+
+    # Handle 'to' field
     to_addresses = data.get("to")
+    if not to_addresses:
+        raise ValueError("'to' field is required")
+    
     if isinstance(to_addresses, str):
         to_addresses = [to_addresses]
+    elif isinstance(to_addresses, (list, tuple)):
+        if not all(isinstance(addr, str) for addr in to_addresses):
+            raise ValueError("All email addresses must be strings")
+    else:
+        raise ValueError("'to' must be a string or list of strings")
+
+    message['to'] = ', '.join(str(addr) for addr in to_addresses)
+    message['subject'] = str(data.get("subject", ""))
     
-    message['to'] = ', '.join(to_addresses)
-    message['subject'] = data.get("subject")
-    
-    # Add CC and BCC if provided
-    if "cc" in data:
-        message['cc'] = ', '.join(data.get("cc"))
-    if "bcc" in data:
-        message['bcc'] = ', '.join(data.get("bcc"))
+    # Handle CC
+    cc_addresses = data.get("cc", [])
+    if cc_addresses:
+        if isinstance(cc_addresses, str):
+            cc_addresses = [cc_addresses]
+        message['cc'] = ', '.join(str(addr) for addr in cc_addresses)
+
+    # Handle BCC
+    bcc_addresses = data.get("bcc", [])
+    if bcc_addresses:
+        if isinstance(bcc_addresses, str):
+            bcc_addresses = [bcc_addresses]
+        message['bcc'] = ', '.join(str(addr) for addr in bcc_addresses)
     
     message.attach(MIMEText(data.get("body")))
     
@@ -87,7 +243,7 @@ def send_email(data: dict = Body(...)):
     return {"message": "Email sent successfully!", "messageId": send_message['id']}
 
 @app.post("/read_email")
-def read_email(data: dict = Body(...)):
+def read_email_endpoint(data: dict = Body(...)):
     """
     MCP tool to read a specific email by its ID.
     Expects a JSON body with 'messageId'.
@@ -121,7 +277,7 @@ def read_email(data: dict = Body(...)):
     }
 
 @app.post("/search_emails")
-def search_emails(data: dict = Body(...)):
+def search_emails_endpoint(data: dict = Body(...)):
     """
     Enhanced MCP tool to search emails with advanced filtering.
     Expects a JSON body with:
@@ -155,102 +311,8 @@ def search_emails(data: dict = Body(...)):
     
     return {"messages": messages}
 
-    """
-    MCP tool to create a calendar event and send invitations.
-    Expects a JSON body with:
-    - summary: string (meeting title)
-    - description: string
-    - start_time: string (ISO format)
-    - duration_minutes: int
-    - attendees: list of email addresses
-    - location: string (optional)
-    """
-    # Build the calendar service
-    service = build('calendar', 'v3', credentials=get_gmail_service().credentials)
-    
-    start_time = datetime.fromisoformat(data.get("start_time"))
-    end_time = start_time + timedelta(minutes=data.get("duration_minutes", 60))
-    
-    event = {
-        'summary': data.get("summary"),
-        'location': data.get("location", ""),
-        'description': data.get("description"),
-        'start': {
-            'dateTime': start_time.isoformat(),
-            'timeZone': 'UTC',
-        },
-        'end': {
-            'dateTime': end_time.isoformat(),
-            'timeZone': 'UTC',
-        },
-        'attendees': [{'email': attendee} for attendee in data.get("attendees", [])],
-        'reminders': {
-            'useDefault': True
-        },
-    }
-
-    event = service.events().insert(calendarId='primary', body=event, sendUpdates='all').execute()
-    return {"message": "Meeting created successfully!", "eventId": event['id'], "meetingLink": event.get('hangoutLink')}
-
-# Add these new endpoints after the existing ones
-
-@app.get("/unread_emails")
-def get_unread_emails(max_results: int = 10):
-    """Get unread emails with their details"""
-    try:
-        service = get_gmail_service()
-        
-        # Search for unread messages
-        result = service.users().messages().list(
-            userId='me',
-            labelIds=['UNREAD'],
-            maxResults=max_results
-        ).execute()
-        
-        messages = result.get('messages', [])
-        unread_emails = []
-        
-        if not messages:
-            return {'unread_count': 0, 'messages': []}
-            
-        for msg in messages:
-            # Get the full message details
-            email = service.users().messages().get(
-                userId='me',
-                id=msg['id'],
-                format='full'
-            ).execute()
-            
-            # Extract headers
-            headers = email['payload']['headers']
-            subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
-            sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown')
-            date = next((h['value'] for h in headers if h['name'].lower() == 'date'), '')
-            snippet = email.get('snippet', '')
-            
-            unread_emails.append({
-                'id': msg['id'],
-                'subject': subject,
-                'from': sender,
-                'date': date,
-                'snippet': snippet,
-                'labels': email.get('labelIds', [])
-            })
-        
-        return {
-            'unread_count': len(unread_emails),
-            'messages': unread_emails
-        }
-        
-    except Exception as e:
-        return {
-            'error': str(e),
-            'unread_count': 0,
-            'messages': []
-        }
-
 @app.post("/filter_emails")
-def filter_emails(data: dict = Body(...)):
+def filter_emails_endpoint(data: dict = Body(...)):
     """
     Filter emails based on multiple criteria
     Expects a JSON body with any of these optional fields:
@@ -327,3 +389,61 @@ def filter_emails(data: dict = Body(...)):
         })
     
     return {'count': len(filtered_emails), 'messages': filtered_emails}
+
+@app.get("/unread_emails")
+def get_unread_emails_endpoint(max_results: int = 10):
+    """Get unread emails with their details"""
+    try:
+        service = get_gmail_service()
+        
+        # Search for unread messages
+        result = service.users().messages().list(
+            userId='me',
+            labelIds=['UNREAD'],
+            maxResults=max_results
+        ).execute()
+        
+        messages = result.get('messages', [])
+        unread_emails = []
+        
+        if not messages:
+            return {'unread_count': 0, 'messages': []}
+            
+        for msg in messages:
+            # Get the full message details
+            email = service.users().messages().get(
+                userId='me',
+                id=msg['id'],
+                format='full'
+            ).execute()
+            
+            # Extract headers
+            headers = email['payload']['headers']
+            subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
+            sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown')
+            date = next((h['value'] for h in headers if h['name'].lower() == 'date'), '')
+            snippet = email.get('snippet', '')
+            
+            unread_emails.append({
+                'id': msg['id'],
+                'subject': subject,
+                'from': sender,
+                'date': date,
+                'snippet': snippet,
+                'labels': email.get('labelIds', [])
+            })
+        
+        return {
+            'unread_count': len(unread_emails),
+            'messages': unread_emails
+        }
+        
+    except Exception as e:
+        return {
+            'error': str(e),
+            'unread_count': 0,
+            'messages': []
+        }
+
+# Mount the MCP server
+app.mount("/api", mcp_app)
